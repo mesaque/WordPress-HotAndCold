@@ -11,6 +11,7 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 */
 add_filter( 'query', 'hot_cold_database_logic' );
 register_activation_hook( __FILE__, 'mysql_setup' );
+register_deactivation_hook( __FILE__, 'mysql_drop_setup' );
 
 function hot_cold_database_logic( $query ){
 	global $wpdb, $pagenow;
@@ -73,60 +74,60 @@ SQL;
 function mysql_setup()
 {
 	global $wpdb;
-	require_once ABSPATH . '/wp-admin/includes/upgrade.php';
 
-	$table = <<<SQL
-	CREATE TABLE IF NOT EXISTS {$wpdb->prefix}posts_hot LIKE  {$wpdb->prefix}posts
-SQL;
+	$date = new DateTime();
+	$modified = $date->modify( '-3 month' );
+	$formated = $modified->format('Ym');
 
-	$triggers = <<<SQL
+	$statment = <<<SQL
+	CREATE TABLE IF NOT EXISTS {$wpdb->prefix}posts_hot LIKE {$wpdb->prefix}posts;
+
+	TRUNCATE {$wpdb->prefix}posts_hot;
+	INSERT INTO {$wpdb->prefix}posts_hot(`ID`, `post_author`, `post_date`, `post_date_gmt`, `post_content`, `post_title`, `post_excerpt`, `post_status`, `comment_status`, `ping_status`, `post_password`, `post_name`, `to_ping`, `pinged`, `post_modified`, `post_modified_gmt`, `post_content_filtered`, `post_parent`, `guid`, `menu_order`, `post_type`, `post_mime_type`, `comment_count`) SELECT `ID`, `post_author`, `post_date`, `post_date_gmt`, `post_content`, `post_title`, `post_excerpt`, `post_status`, `comment_status`, `ping_status`, `post_password`, `post_name`, `to_ping`, `pinged`, `post_modified`, `post_modified_gmt`, `post_content_filtered`, `post_parent`, `guid`, `menu_order`, `post_type`, `post_mime_type`, `comment_count` from {$wpdb->prefix}posts  where extract( YEAR_MONTH from post_date) > {$formated};
+
 	DROP TRIGGER IF EXISTS Tgr_InsertOnHOT;
 	DROP TRIGGER IF EXISTS Tgr_UpdateOnHOT;
 	DROP TRIGGER IF EXISTS Tgr_DeleteOnHOT;
 	DROP EVENT IF EXISTS Evn_remove_old_posts_hot;
-
-	DELIMITER $$
 	CREATE TRIGGER Tgr_InsertOnHOT AFTER INSERT
 	ON {$wpdb->prefix}posts
 	FOR EACH ROW
 	BEGIN
 	INSERT INTO {$wpdb->prefix}posts_hot (ID, post_author, post_date, post_date_gmt, post_content, post_title, post_excerpt, post_status, comment_status, ping_status, post_password, post_name, to_ping, pinged, post_modified, post_modified_gmt, post_content_filtered, post_parent, guid, menu_order, post_type, post_mime_type, comment_count) values (NEW.ID, NEW.post_author, NEW.post_date, NEW.post_date_gmt, NEW.post_content, NEW.post_title, NEW.post_excerpt, NEW.post_status, NEW.comment_status, NEW.ping_status, NEW.post_password, NEW.post_name, NEW.to_ping, NEW.pinged, NEW.post_modified, NEW.post_modified_gmt, NEW.post_content_filtered, NEW.post_parent, NEW.guid, NEW.menu_order, NEW.post_type, NEW.post_mime_type, NEW.comment_count);
-	END$$
+	END;
 
 	CREATE TRIGGER Tgr_UpdateOnHOT AFTER UPDATE
 	ON {$wpdb->prefix}posts
 	FOR EACH ROW
 	BEGIN
 	UPDATE {$wpdb->prefix}posts_hot SET  post_author = NEW.post_author, post_date = NEW.post_date, post_date_gmt = NEW.post_date_gmt, post_content = NEW.post_content, post_title = NEW.post_title, post_excerpt = NEW.post_excerpt, post_status = NEW.post_status, comment_status = NEW.comment_status, ping_status = NEW.ping_status, post_password = NEW.post_password, post_name = NEW.post_name, to_ping = NEW.to_ping, pinged = NEW.pinged, post_modified = NEW.post_modified, post_modified_gmt = NEW.post_modified_gmt, post_content_filtered = NEW.post_content_filtered, post_parent = NEW.post_parent, guid = NEW.guid, menu_order = NEW.menu_order, post_type = NEW.post_type, post_mime_type = NEW.post_mime_type , comment_count = NEW.comment_count  WHERE  ID = NEW.ID;
-	END$$
+	END;
 
 	CREATE TRIGGER Tgr_DeleteOnHOT AFTER DELETE
 	ON {$wpdb->prefix}posts
 	FOR EACH ROW
 	BEGIN
 	DELETE from {$wpdb->prefix}posts_hot WHERE ID  = OLD.ID;
-	END$$
+	END;
 
 	CREATE EVENT  Evn_remove_old_posts_hot ON SCHEDULE EVERY 2 WEEK
 	DO
 	BEGIN
 	DELETE from {$wpdb->prefix}posts_hot WHERE post_date < DATE_SUB( NOW(), INTERVAL 45 DAY );
-	END$$
-
-	DELIMITER ;
+	END;
 SQL;
 
-	$date = new DateTime();
-	$modified = $date->modify( '-3 month' );
-	$formated = $modified->format('Ym');
-
-	$data = <<<SQL
-	TRUNCATE {$wpdb->prefix}posts_hot;
-	INSERT INTO {$wpdb->prefix}posts_hot(`ID`, `post_author`, `post_date`, `post_date_gmt`, `post_content`, `post_title`, `post_excerpt`, `post_status`, `comment_status`, `ping_status`, `post_password`, `post_name`, `to_ping`, `pinged`, `post_modified`, `post_modified_gmt`, `post_content_filtered`, `post_parent`, `guid`, `menu_order`, `post_type`, `post_mime_type`, `comment_count`) SELECT `ID`, `post_author`, `post_date`, `post_date_gmt`, `post_content`, `post_title`, `post_excerpt`, `post_status`, `comment_status`, `ping_status`, `post_password`, `post_name`, `to_ping`, `pinged`, `post_modified`, `post_modified_gmt`, `post_content_filtered`, `post_parent`, `guid`, `menu_order`, `post_type`, `post_mime_type`, `comment_count` from {$wpdb->prefix}posts  where extract( YEAR_MONTH from post_date) > {$formated};
+	mysqli_multi_query($wpdb->dbh,$statment);
+}
+function mysql_drop_setup()
+{
+	global $wpdb;
+	$statment = <<<SQL
+		DROP TABLE IF EXISTS {$wpdb->prefix}posts_hot;
+		DROP TRIGGER IF EXISTS Tgr_InsertOnHOT;
+		DROP TRIGGER IF EXISTS Tgr_UpdateOnHOT;
+		DROP TRIGGER IF EXISTS Tgr_DeleteOnHOT;
+		DROP EVENT IF EXISTS Evn_remove_old_posts_hot;
 SQL;
-
-
-	dbDelta($table);
-	dbDelta($data);
-	dbDelta($triggers);
+	mysqli_multi_query($wpdb->dbh,$statment);
 }
