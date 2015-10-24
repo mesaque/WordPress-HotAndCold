@@ -113,7 +113,7 @@ function mysql_setup()
 	CREATE EVENT  Evn_remove_old_posts_hot ON SCHEDULE EVERY 2 WEEK
 	DO
 	BEGIN
-	DELETE from {$wpdb->prefix}posts_hot WHERE post_date < DATE_SUB( NOW(), INTERVAL 45 DAY );
+	DELETE from {$wpdb->prefix}posts_hot WHERE post_date < DATE_SUB( NOW(), INTERVAL 90 DAY );
 	END;
 SQL;
 
